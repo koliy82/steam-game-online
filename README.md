@@ -19,19 +19,24 @@ cd steam-game-online
 ```
 STEAM_USERNAME=username
 STEAM_PASSWORD=password
-
-# FOR MORE GAMES THEN ONE USE:
-# GAMES_IDS=219780,440,730
-# In steam will be display first id, 
-# but the hours are incremented for all games. 
 GAMES_IDS=219780
 ```
+The `GAMES_IDS` variable can be set in 3 ways:
+1) `GAMES_IDS=219780` - For one game, in the game link after the app/ you will be able to find the ID of that game:
+(https://store.steampowered.com/app/ --> 219780 <-- here /Divinity_II_Developers_Cut/)
+2) `GAMES_IDS=219780,440,730` - Same thing, just a day of multiple games at once. IDs are entered with a comma. Only one game will be displayed, but the hours will be farmed for all of them.
+3) `GAMES_IDS=Custom Game Name` - Just any text, Steam will display it as if you are playing a third-party game with that text.
 
 ## Usage
-If u have docker installed, just run `./docker-setup.sh`. Either way u need to install node, and run it with comand below, and keep console open.
+You need to install node, and run it with comand below, and keep console open.
 ```sh
 node index.js YOUR_STEAM_GUARD_CODE
 ```
 
+## Usage with Docker
+If u have docker installed, just run `./docker-setup.sh`. 
+Wait until you are asked to enter Steam Guard, after entering it you can close the console (CTRL+C).
+
+
 ## Limitations
-If you fail to log into your account many times, steam will limit your requests and you'll just have to try again later.
+If you fail to log into your account many times, steam will limit your requests and you'll just have to try again later or use proxy.
