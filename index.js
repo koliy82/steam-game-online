@@ -15,6 +15,17 @@ user.logOn(logOnOptions);
 user.on('loggedOn', () => {
   console.log(logOnOptions.accountName + ' - Successfully logged on');
   user.setPersona(1); 
-  var games = process.env.GAMES_IDS.split(',').map(Number);
+  
+  let games;
+  if (/^\d+(,\d+)*$/.test(process.env.GAMES_IDS)) {
+    games = process.env.GAMES_IDS.split(',').map(Number);
+  } else {
+    games = process.env.GAMES_IDS;
+  }
   user.gamesPlayed(games); 
+  console.log('Playing games:', games);
+  
 });
+
+
+
