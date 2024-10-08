@@ -9,7 +9,7 @@
 
 ## Installation
 1. Clone the repository:
-```
+```sh
 git clone https://github.com/koliy82/steam-game-online
 cd steam-game-online
 ```
@@ -29,7 +29,7 @@ GAMES_IDS=219780
 
 ## Usage
 If u have docker installed, just run `./docker-setup.sh`. Either way u need to install node, and run it with comand below, and keep console open.
-```js
+```sh
 node index.js YOUR_STEAM_GUARD_CODE
 ```
 
