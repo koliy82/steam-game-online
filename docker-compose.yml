@@ -3,3 +3,7 @@ services:
     build: .
     env_file: 
       - .env
+    volumes:
+     - type: bind
+       source: storage
+       target: /root/.local/share/node-steamuser

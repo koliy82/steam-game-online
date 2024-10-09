@@ -11,6 +11,7 @@
   "license": "ISC",
   "dependencies": {
     "dotenv": "^16.4.5",
+    "path": "^0.12.7",
     "steam-user": "^5.2.0"
   }
 }
