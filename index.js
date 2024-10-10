@@ -1,63 +1,63 @@
 require('dotenv').config();
 const SteamUser = require('steam-user');
-const ReadLine = require('readline');
-const fs = require('fs')
-const path = require('node:path'); 
+const fs = require('fs');
+const path = require('path');
+const rlSync = require('readline-sync');
 
-const user = new SteamUser();
+function logIntoAccount(account) {
+  const user = new SteamUser();
 
-const logOnOptions = {
-  accountName: process.env.STEAM_USERNAME,
-  password: process.env.STEAM_PASSWORD,
-};
+  const logOnOptions = {
+    accountName: account.login,
+    password: account.password,
+  };
 
-token_path = logOnOptions.accountName + ".secret";
+  const tokenPath = `${logOnOptions.accountName}.secret`
+  if (fs.existsSync(user.storage.directory + path.sep + tokenPath)) {
+    user.storage.readFile(tokenPath).then(bytes => {
+      const token = bytes.toString();
+      console.log('Token ' + tokenPath + ' is loaded:');
+      const jwt = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+      const currentTime = Math.floor(Date.now() / 1000);
 
-if (fs.existsSync(user.storage.directory + path.sep + token_path)) { 
-  user.storage.readFile(token_path).then( bytes => {
-    token = bytes.toString()
-    console.log('token ' + token_path + ' is loaded:');
-    jwt = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
-    console.log(jwt);
-    const currentTime = Math.floor(Date.now() / 1000);
-    if (jwt.exp && currentTime >= jwt.exp) {
-      console.log('Token has expired. Logging in with username and password...');
-      user.logOn(logOnOptions);
-    } else {
-      console.log('Token is still valid.');
-      user.logOn({ refreshToken: token });
+      if (jwt.exp && currentTime >= jwt.exp) {
+        console.log(`Token ${account.login} has expired. Logging in with username and password...`);
+        user.logOn(logOnOptions);
+      } else {
+        console.log(`Token ${account.login} is still valid.`);
+        user.logOn({ refreshToken: token });
+      }
+    });
+  } else {
+    user.logOn(logOnOptions);
+  }
+
+  user.on('loggedOn', () => {
+    console.log(logOnOptions.accountName + ' - Successfully logged on');
+    user.setPersona(account.state);
+
+    let games = account.gameIds;
+
+    if (Array.isArray(games) && games.every(game => typeof game === 'string' && /^\d+$/.test(game))) {
+      games = games.map(Number);
     }
+
+    user.gamesPlayed(games);
+    console.log('Playing games:', games);
   });
-}else{
-  user.logOn(logOnOptions);
+  
+  user.on('steamGuard', async (domain, callback) => {
+    var code = rlSync.question(`Steam Guard code for ${account.login}: `);
+    callback(code);
+  });
+
+  user.on('refreshToken', function(token) {
+    user.storage.saveFile(tokenPath, token)
+    console.log(`Auth token for ${account.login} has been saved.`);
+  });
 }
 
-user.on('loggedOn', () => {
-  console.log(logOnOptions.accountName + ' - Successfully logged on');
-  user.setPersona(1); 
-  
-  let games;
-  if (/^\d+(,\d+)*$/.test(process.env.GAMES_IDS)) {
-    games = process.env.GAMES_IDS.split(',').map(Number);
-  } else {
-    games = process.env.GAMES_IDS;
-  }
-  user.gamesPlayed(games); 
-  console.log('Playing games:', games);
-});
-
-user.on('steamGuard', function(domain, callback) {
-  let rl = ReadLine.createInterface({
-		input: process.stdin,
-		output: process.stdout
-	});
-  rl.question('Steam Guard code: ', (code) => {
-			rl.close();
-      callback(code);
-	});
-});
-
-user.on('refreshToken', function(token) {
-	user.storage.saveFile(token_path, token)
-  console.log(token);
+const accounts = JSON.parse(fs.readFileSync('accounts.json', 'utf8')).accounts;
+accounts.forEach(account => {
+  logIntoAccount(account);
 });
