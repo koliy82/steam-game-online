@@ -10,6 +10,8 @@ function logIntoAccount(account) {
   const logOnOptions = {
     accountName: account.login,
     password: account.password,
+    machineName: "Koliy82",
+    clientOS: 20,
   };
 
   const tokenPath = `${logOnOptions.accountName}.secret`
@@ -25,7 +27,11 @@ function logIntoAccount(account) {
         user.logOn(logOnOptions);
       } else {
         console.log(`Token ${account.login} is still valid.`);
-        user.logOn({ refreshToken: token });
+        user.logOn({
+          refreshToken: token,
+          machineName: "Koliy82",
+          clientOS: 20,
+         });
       }
     });
   } else {
