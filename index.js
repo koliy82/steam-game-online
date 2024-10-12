@@ -73,21 +73,17 @@ function logIntoAccount(account) {
 	})
 
 	user.on('error', function(err) {
-    switch(err){
-      case "Error: RateLimitExceeded":
-        console.log(`${account.login} - rate limit:`);
-        break;
-      case "Error: InvalidPassword":
-        console.log(`${account.login} - bad password:`);
-        break;
-      case "Error: LoggedInElsewhere":
-        console.log(`${account.login} - logout:`);
-        user.logOff();
-        break;
-      default:
-        console.log(`${account.login} - OTHER ERROR:`);
-        user.logOff();
-    }
+		if (err == "Error: RateLimitExceeded") {
+			console.log(`${account.login} - rate limit:`);
+		}else if (err == "Error: InvalidPassword") {
+				console.log(`${account.login} - bad password:`);
+		}else if (err == "Error: LoggedInElsewhere") {
+      console.log(`${account.login} - logout:`);
+			user.logOff();
+		}else {
+			console.log(`${account.login} - OTHER ERROR:`);
+			user.logOff();
+		}
     console.log(err);
 	});
 }
