@@ -61,6 +61,35 @@ function logIntoAccount(account) {
     user.storage.saveFile(tokenPath, token)
     console.log(`Auth token for ${account.login} has been saved.`);
   });
+
+  user.on('disconnected', function(msg) {
+		console.log(`${account.login} disconnected, reason: ${msg}`);
+	});
+
+	user.on('playingState', function(blocked, playingApp) {
+		if (blocked == true) {
+			console.log(`${account.login} - playing on another device. Game: ${playingApp}`);
+		}
+	})
+
+	user.on('error', function(err) {
+    switch(err){
+      case "Error: RateLimitExceeded":
+        console.log(`${account.login} - rate limit:`);
+        break;
+      case "Error: InvalidPassword":
+        console.log(`${account.login} - bad password:`);
+        break;
+      case "Error: LoggedInElsewhere":
+        console.log(`${account.login} - logout:`);
+        user.logOff();
+        break;
+      default:
+        console.log(`${account.login} - OTHER ERROR:`);
+        user.logOff();
+    }
+    console.log(err);
+	});
 }
 
 const accounts = JSON.parse(fs.readFileSync('accounts.json', 'utf8')).accounts;
