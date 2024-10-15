@@ -67,14 +67,14 @@ function subscribeUserEvents(user, account) {
   });
 
   user.on('steamGuard', (domain, callback) => {
-    bot.sendMessage(account.telegramId, 'Введите код Steam Guard.');
+    bot.sendMessage(account.telegramId, `Введите код Steam Guard для ${account.login}: `);
     bot.once('message', (codeResponse) => {
       const code = codeResponse.text;
       callback(code);
     });
   });
 
-  // TODO проверить что токен сохраняется
+  // Токен не сохраняется в бд, но он есть 🥺
   user.on('refreshToken', async function(token) {
     console.log(token);
     await usersColl.updateOne(
@@ -132,14 +132,8 @@ function subscribeUserEvents(user, account) {
     } else {
       console.log(`${account.login} - OTHER ERROR:`, err);
       bot.sendMessage(account.telegramId, `${account.login} - Неизвестная ошибка.`);
-      steamUser.logOff();
+      user.logOff();
     }
-  });
-
-  user.on('error', (err) => {
-    console.error(`${account.login} encountered an error:`, err);
-    
-    user.logOff();
   });
 }
 
@@ -160,10 +154,10 @@ function logIntoAccount(account, steamUser=null) {
 
   if (account.token) {
     if (isTokenExpired(account.token)) {
-      console.log(`Token for ${account.login} has expired. Logging in with username and password...`);
+      console.log(`Token for ${account.login} has expired. Logging with username and password...`);
       steamUser.logOn(logOnOptions);
     } else {
-      console.log(`Token for ${account.login} is still valid. Logging in with token...`);
+      console.log(`Token for ${account.login} is still valid. Logging with token...`);
       steamUser.logOn({
         machineName: "Koliy82",
         clientOS: 20,
@@ -171,7 +165,12 @@ function logIntoAccount(account, steamUser=null) {
       });
     }
   } else {
-    steamUser.logOn(logOnOptions);
+    if (account.shared_secret != null){
+      logOnOptions.twoFactorCode = totp.generateAuthCode(account.shared_secret);
+      steamUser.logOn(logOnOptions);
+    }else{
+      steamUser.logOn(logOnOptions);
+    }
   }
 }
 
@@ -186,7 +185,6 @@ bot.onText(/\/add (.+) (.+)/, async (msg, match) => {
   const chatId = msg.from.id;
   const login = match[1];
   const password = match[2];
-  console.log(`Input data: ${login} ${password} from ${chatId}`);
   const newAccount = {
     login: login,
     password: password,
@@ -214,7 +212,7 @@ bot.onText(/\/add (.+) (.+)/, async (msg, match) => {
   bot.once('callback_query', async (callbackQuery) => {
     const response = callbackQuery.data;
     if (response === 'yes') {
-      bot.sendMessage(chatId, 'Отправьте свой shared secret.');
+      bot.sendMessage(chatId, `Отправьте свой shared_secret для ${login}: `);
       bot.answerCallbackQuery(callbackQuery.id);
       bot.once('message', async (secretResponse) => {
         newAccount.shared_secret = secretResponse.text;
