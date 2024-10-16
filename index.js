@@ -235,9 +235,9 @@ bot.onText(/\/add (.+) (.+)/, async (msg, match) => {
 
 bot.onText(/\/list/, async (msg) => {
   const fromId = msg.from.id;
-  const user = await usersColl.findOne({ id: fromId });
+  const user = await findOrCreateUser(chatId);
 
-  if (user && Object.keys(user.accounts).length > 0) {
+  if (Object.keys(user.accounts).length > 0) {
     let message = 'Ваши аккаунты:\n';
     const inlineKeyboard = [];
 
@@ -279,7 +279,7 @@ bot.on('callback_query', async (callbackQuery) => {
 
   if (data.startsWith('stop_farming_')) {
     const login = data.split('_')[2];
-    const user = await usersColl.findOne({ id: chatId });
+    const user = await findOrCreateUser(chatId);
     const account = user.accounts[login];
     if (!account) {
       bot.sendMessage(chatId, `Аккаунт не найден.`);
@@ -307,14 +307,8 @@ bot.on('callback_query', async (callbackQuery) => {
       bot.sendMessage(chatId, `Аккаунт ${login} не найден.`);
       return;
     }
-    const user = await usersColl.findOne({ id: chatId });
+    const user = await findOrCreateUser(chatId);
     const account = user.accounts[login];
-
-    // if (!account) {
-    //   bot.sendMessage(chatId, `Аккаунт не найден.`);
-    //   return;
-    // }
-
     const steamUser = activeSessions[login];
     const farmingStatus = steamUser ? 'Остановить фарм' : 'Продолжить фарм';
 
