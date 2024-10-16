@@ -48,6 +48,14 @@ async function findOrCreateUser(telegramId) {
   return user;
 }
 
+async function accountExist(telegramId, login) {
+  const count = await usersColl.countDocuments({
+    id: telegramId,
+    [`accounts.${login}`]: { $exists: true }
+  });
+  return count > 0;
+}
+
 function subscribeUserEvents(user, account) {
   user.on('loggedOn', async () => {
     console.log(`${account.login} - Successfully logged on`);
@@ -231,10 +239,18 @@ bot.onText(/\/list/, async (msg) => {
 
   if (user && Object.keys(user.accounts).length > 0) {
     let message = 'Ваши аккаунты:\n';
+    const inlineKeyboard = [];
+
     Object.keys(user.accounts).forEach((login, index) => {
       message += `${index + 1}. ${login}\n`;
+      inlineKeyboard.push([{ text: `${index + 1}`, callback_data: `select_${login}` }]);
     });
-    bot.sendMessage(fromId, message);
+
+    bot.sendMessage(fromId, message, {
+      reply_markup: {
+        inline_keyboard: inlineKeyboard
+      }
+    });
   } else {
     bot.sendMessage(fromId, 'У вас нет добавленных аккаунтов.');
   }
@@ -254,34 +270,149 @@ bot.on('callback_query', async (callbackQuery) => {
     const login = data.split('_')[2];
     const user = await usersColl.findOne({ id: chatId });
     const account = user.accounts[login];
-    if (account) {
-      logIntoAccount(account);
-    } else {
+    if (!account) {
       bot.sendMessage(chatId, `Аккаунт не найден.`);
+      return
     }
+    logIntoAccount(account);
   }
 
   if (data.startsWith('stop_farming_')) {
     const login = data.split('_')[2];
     const user = await usersColl.findOne({ id: chatId });
     const account = user.accounts[login];
-    if (account) {
-      const steamUser = activeSessions[login];
-      if (steamUser) {
-        steamUser.logOff();
-        delete activeSessions[login];
-        bot.sendMessage(chatId, `Фарм для аккаунта ${login} остановлен.`,{
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: 'Продолжить фарм', callback_data: `continue_farming_${account.login}` }]
-            ]
-          }
-        });
-      }
-    } else {
+    if (!account) {
       bot.sendMessage(chatId, `Аккаунт не найден.`);
+      return
+    }
+    const steamUser = activeSessions[login];
+    if (!steamUser) {
+      bot.sendMessage(chatId, `Фарм для аккаунта ${login} уже остановлен.`);
+      return
+    }
+    steamUser.logOff();
+    delete activeSessions[login];
+    bot.sendMessage(chatId, `Фарм для аккаунта ${login} остановлен.`,{
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: 'Продолжить фарм', callback_data: `continue_farming_${account.login}` }]
+        ]
+      }
+    });
+  }
+
+  if (data.startsWith('select_')) {
+    const login = data.split('_')[1];
+    if (!await accountExist(chatId, login)) {
+      bot.sendMessage(chatId, `Аккаунт ${login} не найден.`);
+      return;
+    }
+    const user = await usersColl.findOne({ id: chatId });
+    const account = user.accounts[login];
+
+    // if (!account) {
+    //   bot.sendMessage(chatId, `Аккаунт не найден.`);
+    //   return;
+    // }
+
+    const steamUser = activeSessions[login];
+    const farmingStatus = steamUser ? 'Остановить фарм' : 'Продолжить фарм';
+
+    let accountInfo = `Информация об аккаунте ${login}:\n` +
+                      `Игры: ${account.gameIds.join(', ')}\n` +
+                      `Статус: ${SteamUser.EPersonaState[account.state]}`;
+
+    bot.sendMessage(chatId, accountInfo, {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: farmingStatus, callback_data: steamUser ? `stop_farming_${login}` : `continue_farming_${login}` }],
+          [{ text: 'Изменить игры', callback_data: `edit_games_${login}` }],
+          [{ text: 'Изменить статус', callback_data: `edit_state_${login}` }],
+          [{ text: 'Удалить', callback_data: `delete_data_${login}` }]
+        ]
+      }
+    });
+  }
+
+  if (data.startsWith('edit_games_')) {
+    const login = data.split('_')[2];
+    if (!await accountExist(chatId, login)) {
+      bot.sendMessage(chatId, `Аккаунт ${login} не найден.`);
+      return;
+    }
+    bot.sendMessage(chatId, `Отправьте новый список ID игр для аккаунта ${login}:`);
+    bot.once('message', async (msg) => {
+      const gameIds = msg.text.split(',').map(Number);
+      await usersColl.updateOne(
+        { id: chatId },
+        { $set: { [`accounts.${login}.gameIds`]: gameIds } }
+      );
+      bot.sendMessage(chatId, `Игры для аккаунта ${login} обновлены: ${gameIds.join(', ')}`);
+      const steamUser = activeSessions[login];
+      if(steamUser){
+        steamUser.gamesPlayed(gameIds);
+      }
+    });
+  }
+  
+  if (data.startsWith('edit_state_')) {
+    const login = data.split('_')[2];
+    if (!await accountExist(chatId, login)) {
+      bot.sendMessage(chatId, `Аккаунт ${login} не найден.`);
+      return;
+    }
+    var text = `Выберите новый статус для аккаунта ${login}: \n`
+    const stateOptions = Object.keys(SteamUser.EPersonaState).
+    filter((v) => !isNaN(Number(v))).
+    map((state) => {
+        showState = parseInt(state) + 1
+        strState = SteamUser.EPersonaState[state]
+        text += `${showState}. ${strState}\n`
+        return {
+            text: showState,
+            callback_data: `set_state_${login}_${state}`
+        };
+    });
+    bot.sendMessage(chatId, text, {
+      reply_markup: {
+        inline_keyboard: [stateOptions]
+      }
+    });
+  }
+
+  if (data.startsWith('set_state_')) {
+    const parts = data.split('_');
+    const login = parts[2];
+    const state = parts[3];
+    if (!await accountExist(chatId, login)) {
+      bot.sendMessage(chatId, `Аккаунт ${login} не найден.`);
+      return;
+    }
+    await usersColl.updateOne(
+      { id: chatId },
+      { $set: { [`accounts.${login}.state`]: parseInt(state) } }
+    );
+    bot.sendMessage(chatId, `Статус для аккаунта ${login} обновлен на ${state}`);
+    const steamUser = activeSessions[login];
+    if(steamUser){
+      steamUser.setPersona(state);
     }
   }
+
+  if (data.startsWith('delete_data_')) {
+    const login = data.split('_')[2];
+    if (!await accountExist(chatId, login)) {
+      bot.sendMessage(chatId, `Аккаунт ${login} не найден.`);
+      return;
+    }
+    await usersColl.updateOne(
+      { id: chatId }, 
+      { $unset: { [`accounts.${login}`]: "" } }
+    );
+    exitAccount(login);
+    bot.sendMessage(chatId, `Аккаунт ${login} был успешно удалён.`);
+  }
+  
   bot.answerCallbackQuery(callbackQuery.id);
 });
 
