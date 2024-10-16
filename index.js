@@ -31,10 +31,11 @@ const usersColl = db.collection('users');
   await db.command({ ping: 1 });
   console.log("Successful connected to MongoDB");
 })();
+const activeSessions = {};
 
 function isTokenExpired(token) {
   const jwt = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
-  const currentTime = Math.floor(Date.now() / 1000);//?
+  const currentTime = Math.floor(Date.now() / 1000);
   return jwt.exp && currentTime >= jwt.exp;
 }
 
@@ -56,9 +57,16 @@ function subscribeUserEvents(user, account) {
     if (Array.isArray(games) && games.every(game => typeof game === 'string' && /^\d+$/.test(game))) {
       games = games.map(Number);
     }
+
     user.gamesPlayed(games);
     console.log(`Playing games: ${games}`);
-    bot.sendMessage(account.telegramId, `Playing games: ${games}`);
+    bot.sendMessage(account.telegramId, `Аккаунт ${account.login} начал фарм. \nИгры: ${games} \nState: ${SteamUser.EPersonaState[account.state]}`, {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: 'Остановить фарм', callback_data: `stop_farming_${account.login}` }]
+        ]
+      }
+    });
 
     await usersColl.updateOne(
       { id: account.telegramId },
@@ -74,41 +82,22 @@ function subscribeUserEvents(user, account) {
     });
   });
 
-  // Токен не сохраняется в бд, но он есть 🥺
   user.on('refreshToken', async function(token) {
-    console.log(token);
-    await usersColl.updateOne(
-      { id: account.telegramId },
-      { $set: { [`accounts.${account.login}.token`]: token.toString() } }
-    );
+    account.token = token;
     console.log(`Auth token for ${account.login} has been saved.`);
   });
 
   user.on('playingState', (blocked, playingApp) => {
     if (blocked) {
       console.log(`${account.login} is playing on another device: ${playingApp}`);
-      bot.sendMessage(account.telegramId, `Вы играете в другую игру на ${playingApp}, фарм остановлен.`, {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: 'Продолжить фарм', callback_data: `continue_farming_${account.login}` }]
-          ]
-        }
-      });
-      user.logOff();
-    }
-  });
-
-  user.on('playingState', (blocked, playingApp) => {
-    if (blocked) {
-      console.log(`${account.login} is playing on another device: ${playingApp}`);
-      bot.sendMessage(account.telegramId, `Вы играете в другую игру на ${playingApp}, фарм остановлен.`, {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: 'Продолжить фарм', callback_data: `continue_farming_${account.login}` }]
-          ]
-        }
-      });
-      user.logOff();
+      // bot.sendMessage(account.telegramId, `Вы играете в другую игру на ${playingApp}, фарм остановлен.`, {
+      //   reply_markup: {
+      //     inline_keyboard: [
+      //       [{ text: 'Продолжить фарм', callback_data: `continue_farming_${account.login}` }]
+      //     ]
+      //   }
+      // });
+      // user.logOff();
     }
   });
 
@@ -117,32 +106,41 @@ function subscribeUserEvents(user, account) {
     if (err.message === "RateLimitExceeded") {
       bot.sendMessage(account.telegramId, `${account.login} - Превышено количество попыток авторизации в аккаунт Steam, попробуйте через час.`);
     } else if (err.message === "InvalidPassword") {
-      bot.sendMessage(account.telegramId, `${account.login} - Неверный пароль, введите повторно:`);
-      bot.once('message', async (newPasswordMessage) => {
-        const newPassword = newPasswordMessage.text;
-        account.password = newPassword;
-        await usersColl.updateOne(
-          { id: account.telegramId },
-          { $set: { [`accounts.${account.login}.password`]: newPassword } }
-        );
-        logIntoAccount(account);
+      bot.sendMessage(account.telegramId, `${account.login} - Неверный пароль, введите повторно: `);
+      bot.once('message', async (msg) => {
+        account.password = msg.text;
+        logIntoAccount(account, user);
       });
     } else if (err.message === "LoggedInElsewhere") {
       console.log(`${account.login} - Logged in elsewhere.`);
+      bot.sendMessage(account.telegramId, `Вы играете в другую игру на аккаунте ${account.login}, фарм остановлен.`, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: 'Продолжить фарм', callback_data: `continue_farming_${account.login}` }]
+          ]
+        }
+      });
+      exitAccount(account.login);
     } else {
-      console.log(`${account.login} - OTHER ERROR:`, err);
-      bot.sendMessage(account.telegramId, `${account.login} - Неизвестная ошибка.`);
-      user.logOff();
+      bot.sendMessage(account.telegramId, `${account.login} - Неизвестная ошибка, выход из аккаунта...`);
+      exitAccount(account.login);
     }
   });
+}
+
+function exitAccount(login){
+  const user = activeSessions[login];
+  if(user){
+    delete activeSessions[login];
+    user.logOff();
+  }
 }
 
 function logIntoAccount(account, steamUser=null) {
   if (!steamUser){
     steamUser = new SteamUser();
     subscribeUserEvents(steamUser, account);
-  }else{
-    steamUser = user
+    activeSessions[account.login] = steamUser;
   }
 
   const logOnOptions = {
@@ -177,7 +175,7 @@ function logIntoAccount(account, steamUser=null) {
 bot.onText(/\/start/, (msg) => {
   i18next.changeLanguage(msg.from.language_code || 'en').then(() => {
     const responseText = i18next.t('start');
-    bot.sendMessage(msg.chat.id, responseText);
+    bot.sendMessage(msg.chat.id, responseText, {parse_mode: 'HTML'});
   });
 });
 
@@ -217,22 +215,10 @@ bot.onText(/\/add (.+) (.+)/, async (msg, match) => {
       bot.once('message', async (secretResponse) => {
         newAccount.shared_secret = secretResponse.text;
         user.accounts[login] = newAccount;
-
-        await usersColl.updateOne(
-          { id: chatId },
-          { $set: { [`accounts.${login}`]: newAccount } }
-        );
-
         logIntoAccount(newAccount);
       });
     } else if (response === 'no') {
       user.accounts[login] = newAccount;
-
-      await usersColl.updateOne(
-        { id: chatId },
-        { $set: { [`accounts.${login}`]: newAccount } }
-      );
-
       logIntoAccount(newAccount);
       bot.answerCallbackQuery(callbackQuery.id);
     }
@@ -270,12 +256,33 @@ bot.on('callback_query', async (callbackQuery) => {
     const account = user.accounts[login];
     if (account) {
       logIntoAccount(account);
-      bot.sendMessage(chatId, 'Фарм продолжается.');
     } else {
-      bot.sendMessage(chatId, 'Аккаунт не найден.');
+      bot.sendMessage(chatId, `Аккаунт не найден.`);
     }
   }
 
+  if (data.startsWith('stop_farming_')) {
+    const login = data.split('_')[2];
+    const user = await usersColl.findOne({ id: chatId });
+    const account = user.accounts[login];
+    if (account) {
+      const steamUser = activeSessions[login];
+      if (steamUser) {
+        steamUser.logOff();
+        delete activeSessions[login];
+        bot.sendMessage(chatId, `Фарм для аккаунта ${login} остановлен.`,{
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: 'Продолжить фарм', callback_data: `continue_farming_${account.login}` }]
+            ]
+          }
+        });
+      }
+    } else {
+      bot.sendMessage(chatId, `Аккаунт не найден.`);
+    }
+  }
+  bot.answerCallbackQuery(callbackQuery.id);
 });
 
 (async() => {
