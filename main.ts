@@ -1,23 +1,14 @@
-require('dotenv').config();
-const i18next = require('i18next');
-const Backend = require('i18next-node-fs-backend');
-i18next.use(Backend).init({
-  lng: 'en',
-  fallbackLng: 'en',
-  backend: {
-    loadPath: './locales/{{lng}}.json'
-  }
-});
+import dotenv from 'dotenv'; 
+import SteamUser from 'steam-user';
+import totp from 'steam-totp';
+import { Bot, Context } from "grammy";
+import { I18n, I18nFlavor } from "@grammyjs/i18n";
+import { MongoClient, ServerApiVersion } from "mongodb";
+import { Buffer } from "node:buffer";
+dotenv.config();  
 
-const SteamUser = require('steam-user');
-const totp = require('steam-totp');
-
-const TelegramBot = require('node-telegram-bot-api');
-const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, {polling: true});
-
-const { MongoClient, ServerApiVersion } = require("mongodb");
-const mongoUrl = process.env.MONGO_URL;
-const mongoDB = 'steam';
+const mongoUrl = process.env.MONGO_URL || "?";
+const mongoDB = process.env.MONGO_DATABASE || "steam";
 const client = new MongoClient(mongoUrl,  {
   serverApi: {
       version: ServerApiVersion.v1,
@@ -33,13 +24,21 @@ const usersColl = db.collection('users');
 })();
 const activeSessions = {};
 
-function isTokenExpired(token) {
+type MyContext = Context & I18nFlavor;
+const bot = new Bot<MyContext>(process.env.TELEGRAM_TOKEN || "?");
+const i18n = new I18n<MyContext>({
+  defaultLocale: "en",
+  directory: "locales",
+});
+bot.use(i18n);
+
+function isTokenExpired(token: string) {
   const jwt = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
   const currentTime = Math.floor(Date.now() / 1000);
   return jwt.exp && currentTime >= jwt.exp;
 }
 
-async function findOrCreateUser(telegramId) {
+async function findOrCreateUser(telegramId: number) {
   let user = await usersColl.findOne({ id: telegramId });
   if (!user) {
     user = { id: telegramId, accounts: {} };
@@ -48,7 +47,7 @@ async function findOrCreateUser(telegramId) {
   return user;
 }
 
-async function accountExist(telegramId, login) {
+async function accountExist(telegramId: number, login: string) {
   const count = await usersColl.countDocuments({
     id: telegramId,
     [`accounts.${login}`]: { $exists: true }
@@ -90,7 +89,7 @@ function subscribeUserEvents(user, account) {
     });
   });
 
-  user.on('refreshToken', async function(token) {
+  user.on('refreshToken', async function(token: string) {
     account.token = token;
     console.log(`Auth token for ${account.login} has been saved.`);
   });
@@ -98,14 +97,6 @@ function subscribeUserEvents(user, account) {
   user.on('playingState', (blocked, playingApp) => {
     if (blocked) {
       console.log(`${account.login} is playing on another device: ${playingApp}`);
-      // bot.sendMessage(account.telegramId, `Вы играете в другую игру на ${playingApp}, фарм остановлен.`, {
-      //   reply_markup: {
-      //     inline_keyboard: [
-      //       [{ text: 'Продолжить фарм', callback_data: `continue_farming_${account.login}` }]
-      //     ]
-      //   }
-      // });
-      // user.logOff();
     }
   });
 
@@ -180,15 +171,12 @@ function logIntoAccount(account, steamUser=null) {
   }
 }
 
-bot.onText(/\/start/, (msg) => {
-  i18next.changeLanguage(msg.from.language_code || 'en').then(() => {
-    const responseText = i18next.t('start');
-    bot.sendMessage(msg.chat.id, responseText, {parse_mode: 'HTML'});
-  });
+bot.command("start", async (ctx) => {
+  await ctx.reply(ctx.t("start"));
 });
 
-bot.onText(/\/add (.+) (.+)/, async (msg, match) => {
-  const chatId = msg.from.id;
+bot.command("add (.+) (.+)", async (ctx) => {
+  const chatId = ctx.message?.from.id;
   const login = match[1];
   const password = match[2];
   const newAccount = {
@@ -202,10 +190,10 @@ bot.onText(/\/add (.+) (.+)/, async (msg, match) => {
   };
   const user = await findOrCreateUser(chatId);
 
-  i18next.changeLanguage(msg.from.language_code || 'en').then(() => {
-    const sharedText = i18next.t('shared_secret');
-    const yesText = i18next.t('yes');
-    const noText = i18next.t('no');
+  i18n.changeLanguage(msg.from.language_code || 'en').then(() => {
+    const sharedText = i18n.t('shared_secret');
+    const yesText = i18n.t('yes');
+    const noText = i18n.t('no');
     bot.sendMessage(chatId, sharedText, {
       reply_markup: {
         inline_keyboard: [
@@ -233,8 +221,8 @@ bot.onText(/\/add (.+) (.+)/, async (msg, match) => {
   });
 });
 
-bot.onText(/\/list/, async (msg) => {
-  const fromId = msg.from.id;
+bot.command("list", async (ctx) => {
+  const fromId = ctx.message?.from.id;
   const user = await findOrCreateUser(chatId);
 
   if (Object.keys(user.accounts).length > 0) {
@@ -256,14 +244,14 @@ bot.onText(/\/list/, async (msg) => {
   }
 });
 
-bot.onText(/\/donate/, (msg) => {
-  i18next.changeLanguage(msg.from.language_code || 'en').then(() => {
-    const donateText = i18next.t('donate');
+bot.command("donate", (msg) => {
+  i18n.changeLanguage(msg.from.language_code || 'en').then(() => {
+    const donateText = i18n.t('donate');
     bot.sendMessage(msg.chat.id, donateText);
   });
 });
 
-bot.on('callback_query', async (callbackQuery) => {
+bot.callbackQuery('callback_query', async (callbackQuery) => {
   const chatId = callbackQuery.message.chat.id;
   const data = callbackQuery.data;
   if (data.startsWith('continue_farming_')) {

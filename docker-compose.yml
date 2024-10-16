@@ -1,9 +1,16 @@
+# services:
+#   steam-app:
+#     build: .
+#     env_file: 
+#       - .env
+#     volumes:
+#      - type: bind
+#        source: storage
+#        target: /root/.local/share/node-steamuser
+
 services:
   steam-app:
-    build: .
-    env_file: 
-      - .env
+    image: "denoland/deno:alpine-1.44.4"
     volumes:
-     - type: bind
-       source: storage
-       target: /root/.local/share/node-steamuser
+      - .:/app
+    command: deno run -A main.ts
