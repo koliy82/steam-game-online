@@ -1,9 +1,0 @@
-start = Hi, this bot is designed to farm hours in Steam games. The bot steals your account data and uses it to farm hours in games you set. You can add accounts for farming with the command <code>/add login password</code>, where login is the login from your Steam account and password is the password.
-add_account = Please enter the login and password to add your Steam account.
-shared_secret = ду ю ноу зу вей?
-yes = Yes
-no = No
-donate = ссылка
-acc_not_found = Account not found.
-continue_farm_button = Continue Farming
-acc_farm_stopped = Farming for account {{login}} has been stopped."

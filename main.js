@@ -1,14 +1,23 @@
-import dotenv from 'dotenv'; 
-import SteamUser from 'steam-user';
-import totp from 'steam-totp';
-import { Bot, Context } from "grammy";
-import { I18n, I18nFlavor } from "@grammyjs/i18n";
-import { MongoClient, ServerApiVersion } from "mongodb";
-import { Buffer } from "node:buffer";
-dotenv.config();  
+require('dotenv').config();
+const i18n = require('i18next');
+const Backend = require('i18next-node-fs-backend');
+i18n.use(Backend).init({
+  lng: 'en',
+  fallbackLng: 'en',
+  backend: {
+    loadPath: './locales/{{lng}}.json'
+  }
+});
 
-const mongoUrl = process.env.MONGO_URL || "?";
-const mongoDB = process.env.MONGO_DATABASE || "steam";
+const SteamUser = require('steam-user');
+const totp = require('steam-totp');
+
+const TelegramBot = require('node-telegram-bot-api');
+const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, {polling: true});
+
+const { MongoClient, ServerApiVersion } = require("mongodb");
+const mongoUrl = process.env.MONGO_URL;
+const mongoDB = 'steam';
 const client = new MongoClient(mongoUrl,  {
   serverApi: {
       version: ServerApiVersion.v1,
@@ -24,21 +33,13 @@ const usersColl = db.collection('users');
 })();
 const activeSessions = {};
 
-type MyContext = Context & I18nFlavor;
-const bot = new Bot<MyContext>(process.env.TELEGRAM_TOKEN || "?");
-const i18n = new I18n<MyContext>({
-  defaultLocale: "en",
-  directory: "locales",
-});
-bot.use(i18n);
-
-function isTokenExpired(token: string) {
+function isTokenExpired(token) {
   const jwt = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
   const currentTime = Math.floor(Date.now() / 1000);
   return jwt.exp && currentTime >= jwt.exp;
 }
 
-async function findOrCreateUser(telegramId: number) {
+async function findOrCreateUser(telegramId) {
   let user = await usersColl.findOne({ id: telegramId });
   if (!user) {
     user = { id: telegramId, accounts: {} };
@@ -47,7 +48,7 @@ async function findOrCreateUser(telegramId: number) {
   return user;
 }
 
-async function accountExist(telegramId: number, login: string) {
+async function accountExist(telegramId, login) {
   const count = await usersColl.countDocuments({
     id: telegramId,
     [`accounts.${login}`]: { $exists: true }
@@ -89,7 +90,7 @@ function subscribeUserEvents(user, account) {
     });
   });
 
-  user.on('refreshToken', async function(token: string) {
+  user.on('refreshToken', async function(token) {
     account.token = token;
     console.log(`Auth token for ${account.login} has been saved.`);
   });
@@ -171,12 +172,15 @@ function logIntoAccount(account, steamUser=null) {
   }
 }
 
-bot.command("start", async (ctx) => {
-  await ctx.reply(ctx.t("start"));
+bot.onText(/\/start/, (msg) => {
+  i18n.changeLanguage(msg.from.language_code || 'en').then(() => {
+    const responseText = i18n.t('start');
+    bot.sendMessage(msg.chat.id, responseText, {parse_mode: 'HTML'});
+  });
 });
 
-bot.command("add (.+) (.+)", async (ctx) => {
-  const chatId = ctx.message?.from.id;
+bot.onText(/\/add (.+) (.+)/, async (msg, match) => {
+  const chatId = msg.from.id;
   const login = match[1];
   const password = match[2];
   const newAccount = {
@@ -221,9 +225,9 @@ bot.command("add (.+) (.+)", async (ctx) => {
   });
 });
 
-bot.command("list", async (ctx) => {
-  const fromId = ctx.message?.from.id;
-  const user = await findOrCreateUser(chatId);
+bot.onText(/\/list/, async (msg) => {
+  const fromId = msg.from.id;
+  const user = await findOrCreateUser(fromId);
 
   if (Object.keys(user.accounts).length > 0) {
     let message = 'Ваши аккаунты:\n';
@@ -244,14 +248,14 @@ bot.command("list", async (ctx) => {
   }
 });
 
-bot.command("donate", (msg) => {
+bot.onText(/\/donate/, (msg) => {
   i18n.changeLanguage(msg.from.language_code || 'en').then(() => {
     const donateText = i18n.t('donate');
     bot.sendMessage(msg.chat.id, donateText);
   });
 });
 
-bot.callbackQuery('callback_query', async (callbackQuery) => {
+bot.on('callback_query', async (callbackQuery) => {
   const chatId = callbackQuery.message.chat.id;
   const data = callbackQuery.data;
   if (data.startsWith('continue_farming_')) {

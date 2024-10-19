@@ -1435,7 +1435,10 @@
   "workspace": {
     "packageJson": {
       "dependencies": [
+        "npm:@grammyjs/conversations@^1.2.0",
         "npm:@grammyjs/i18n@^1.1.2",
+        "npm:@grammyjs/stateless-question@4",
+        "npm:@grammyjs/storage-file@^2.4.2",
         "npm:dotenv@^16.4.5",
         "npm:grammy@^1.30.0",
         "npm:i18next-express-middleware@2",
