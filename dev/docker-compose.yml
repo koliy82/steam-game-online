@@ -1,0 +1,8 @@
+services:
+  steam-app:
+    image: "denoland/deno:alpine-1.44.4"
+    env_file: 
+      - .env
+    volumes:
+      - .:/app
+    command: deno run -A main.ts

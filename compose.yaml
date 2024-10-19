@@ -1,0 +1,6 @@
+services:
+  steam-app:
+    build:
+      context: .
+    env_file: 
+      - .env
